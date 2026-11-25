@@ -19,9 +19,13 @@ def load_config():
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
+def save_config(config):
+    CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+
+
 async def tcp_check(host: str, port: int, timeout: float) -> bool:
     try:
-        reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
         writer.close()
         await writer.wait_closed()
         return True
@@ -35,17 +39,34 @@ class StatusBot(discord.Client):
         self.config = config
         self.failures = {node["name"]: 0 for node in config["nodes"]}
         self.states = {node["name"]: "unknown" for node in config["nodes"]}
+        self.monitor_task = None
 
     async def on_ready(self):
         logging.info("Connected as %s", self.user)
-        self.loop.create_task(self.monitor_loop())
+        if self.monitor_task is None or self.monitor_task.done():
+            self.monitor_task = asyncio.create_task(self.monitor_loop())
+
+    async def get_status_message(self, channel):
+        message_id = int(self.config.get("message_id", 0))
+        if message_id:
+            try:
+                return await channel.fetch_message(message_id)
+            except discord.NotFound:
+                logging.warning("Configured status message was deleted; creating a replacement.")
+
+        message = await channel.send("Initializing node status...")
+        self.config["message_id"] = message.id
+        save_config(self.config)
+        logging.info("Created status message with ID %s and saved it to config.json", message.id)
+        return message
 
     async def monitor_loop(self):
         await self.wait_until_ready()
         channel = self.get_channel(int(self.config["channel_id"]))
         if channel is None:
             channel = await self.fetch_channel(int(self.config["channel_id"]))
-        message = await channel.fetch_message(int(self.config["message_id"]))
+        message = await self.get_status_message(channel)
+
         while not self.is_closed():
             lines = []
             for node in self.config["nodes"]:
