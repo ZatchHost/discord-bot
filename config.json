@@ -7,7 +7,7 @@
   "nodes": [
     {
       "name": "Core Node",
-      "host": "192.0.2.10",
+      "host": "192.168.137.2",
       "port": 8006
     },
     {
@@ -17,7 +17,7 @@
     },
     {
       "name": "Website",
-      "host": "example.com",
+      "host": "zatchhost.github.io",
       "port": 443
     }
   ]
