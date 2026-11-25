@@ -1,7 +1,9 @@
 import asyncio
 import json
 import logging
+import math
 import os
+import platform
 from pathlib import Path
 
 import discord
@@ -23,13 +25,31 @@ def save_config(config):
     CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
-async def tcp_check(host: str, port: int, timeout: float) -> bool:
+async def ping_check(host: str, timeout: float) -> bool:
+    """Check whether the tunnel endpoint responds to one ICMP echo request."""
+    timeout = max(0.1, timeout)
+
+    if platform.system() == "Windows":
+        command = ["ping", "-n", "1", "-w", str(math.ceil(timeout * 1000)), host]
+    else:
+        # Linux ping's -W value is expressed in seconds.
+        command = ["ping", "-n", "-c", "1", "-W", str(max(1, math.ceil(timeout))), host]
+
     try:
-        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
-        writer.close()
-        await writer.wait_closed()
-        return True
-    except (OSError, asyncio.TimeoutError, TimeoutError):
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            await asyncio.wait_for(process.communicate(), timeout=timeout + 1)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return False
+        return process.returncode == 0
+    except (OSError, asyncio.SubprocessError):
+        logging.exception("Could not run ping for %s; is the ping utility installed?", host)
         return False
 
 
@@ -70,21 +90,23 @@ class StatusBot(discord.Client):
         while not self.is_closed():
             lines = []
             for node in self.config["nodes"]:
-                name, host, port = node["name"], node["host"], int(node["port"])
-                ok = await tcp_check(host, port, float(self.config["timeout_seconds"]))
+                name, host = node["name"], node["host"]
+                ok = await ping_check(host, float(self.config["timeout_seconds"]))
                 if ok:
                     if self.states[name] != "operational":
-                        logging.info("%s (%s:%s) is reachable", name, host, port)
+                        logging.info("%s (%s) responds to ping", name, host)
                     self.failures[name] = 0
                     self.states[name] = "operational"
                 else:
                     self.failures[name] += 1
                     logging.warning(
-                        "%s (%s:%s) TCP check failed (%s/%s)",
-                        name, host, port, self.failures[name],
+                        "%s (%s) ping failed (%s/%s)",
+                        name, host, self.failures[name],
                         int(self.config["failures_before_down"]),
                     )
                     if self.failures[name] >= int(self.config["failures_before_down"]):
+                        if self.states[name] != "down":
+                            logging.error("%s (%s) is now DOWN", name, host)
                         self.states[name] = "down"
 
                 state = self.states[name]
