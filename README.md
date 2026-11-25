@@ -19,4 +19,4 @@ Keep `config.json` and your token private. Do not commit credentials.
 
 ## Checks
 
-Nodes use TCP connection checks. A node is marked down only after the configured consecutive failures. This verifies reachability of the configured service/port, not full system health. Rebooting is not inferred automatically by TCP checks.
+Nodes use ICMP ping checks against their configured tunnel hostname or IP address (`host`). A node is marked down only after the configured consecutive failures. This verifies that the tunnel endpoint responds to ping; it does not verify that Proxmox or services behind the tunnel are healthy. The machine running the bot must have the system `ping` utility installed and be allowed to send ICMP packets.
