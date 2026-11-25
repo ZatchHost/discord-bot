@@ -19,4 +19,6 @@ Keep `config.json` and your token private. Do not commit credentials.
 
 ## Checks
 
-Nodes use TCP connection checks. A node is marked down only after the configured consecutive failures. This verifies reachability of the configured service/port, not full system health. Rebooting is not inferred automatically by TCP checks.
+Nodes are checked by sending a UDP probe to each configured tunnel endpoint (`host` and `port`). The bot marks a node operational only when it receives a UDP response before the configured timeout, and marks it down after the configured number of consecutive failed probes.
+
+**Important:** UDP has no connection handshake. The service behind the tunnel must reply to the probe packet (`ZATCHHOST_STATUS_PING`) for this check to work. A silent UDP service will be reported as down even if its tunnel is running. This checks the configured UDP service's response, not full system health.
