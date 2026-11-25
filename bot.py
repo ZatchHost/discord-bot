@@ -9,9 +9,8 @@ import discord
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 CONFIG_PATH = Path("config.json")
 UP = "<a:ZH_up:1575164531884425256>"
-DOWN = "<:ZH_down:1575164566822977648>"
-OTHER = "<:ZH_other:1575164741351907468>"
-UDP_PROBE = b"ZATCHHOST_STATUS_PING"
+DOWN = "<a:ZH_down:1575164566822977648>"
+OTHER = "<a:ZH_other:1575164741351907468>"
 
 
 def load_config():
@@ -24,38 +23,14 @@ def save_config(config):
     CONFIG_PATH.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
-class UDPProbe(asyncio.DatagramProtocol):
-    def __init__(self, response):
-        self.response = response
-
-    def datagram_received(self, data, addr):
-        if not self.response.done():
-            self.response.set_result(data)
-
-    def error_received(self, exc):
-        if not self.response.done():
-            self.response.set_exception(exc)
-
-
-async def udp_check(host: str, port: int, timeout: float) -> bool:
-    """Send a UDP probe and wait for any UDP response from the tunnel endpoint."""
-    loop = asyncio.get_running_loop()
-    response = loop.create_future()
-    transport = None
-
+async def tcp_check(host: str, port: int, timeout: float) -> bool:
     try:
-        transport, _ = await loop.create_datagram_endpoint(
-            lambda: UDPProbe(response),
-            remote_addr=(host, port),
-        )
-        transport.sendto(UDP_PROBE)
-        await asyncio.wait_for(response, timeout=max(0.1, timeout))
+        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+        writer.close()
+        await writer.wait_closed()
         return True
     except (OSError, asyncio.TimeoutError, TimeoutError):
         return False
-    finally:
-        if transport is not None:
-            transport.close()
 
 
 class StatusBot(discord.Client):
@@ -96,22 +71,13 @@ class StatusBot(discord.Client):
             lines = []
             for node in self.config["nodes"]:
                 name, host, port = node["name"], node["host"], int(node["port"])
-                ok = await udp_check(host, port, float(self.config["timeout_seconds"]))
+                ok = await tcp_check(host, port, float(self.config["timeout_seconds"]))
                 if ok:
-                    if self.states[name] != "operational":
-                        logging.info("%s (%s:%s/UDP) responded to probe", name, host, port)
                     self.failures[name] = 0
                     self.states[name] = "operational"
                 else:
                     self.failures[name] += 1
-                    logging.warning(
-                        "%s (%s:%s/UDP) probe failed (%s/%s)",
-                        name, host, port, self.failures[name],
-                        int(self.config["failures_before_down"]),
-                    )
                     if self.failures[name] >= int(self.config["failures_before_down"]):
-                        if self.states[name] != "down":
-                            logging.error("%s (%s:%s/UDP) is now DOWN", name, host, port)
                         self.states[name] = "down"
 
                 state = self.states[name]
@@ -120,7 +86,7 @@ class StatusBot(discord.Client):
                 lines.append(f"{emoji} | {name} - {label}")
 
             try:
-                await message.edit(content="\n".join(lines))
+                await message.edit(content="\n# 🚦 Services status\n_ _\n"+"\n".join(lines))
             except discord.HTTPException:
                 logging.exception("Could not update status message")
             await asyncio.sleep(int(self.config["interval_seconds"]))
