@@ -8,7 +8,7 @@ import discord
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 CONFIG_PATH = Path("config.json")
-UP = "<:ZH_up:1575164531884425256>"
+UP = "<a:ZH_up:1575164531884425256>"
 DOWN = "<:ZH_down:1575164566822977648>"
 OTHER = "<:ZH_other:1575164741351907468>"
 
@@ -73,10 +73,17 @@ class StatusBot(discord.Client):
                 name, host, port = node["name"], node["host"], int(node["port"])
                 ok = await tcp_check(host, port, float(self.config["timeout_seconds"]))
                 if ok:
+                    if self.states[name] != "operational":
+                        logging.info("%s (%s:%s) is reachable", name, host, port)
                     self.failures[name] = 0
                     self.states[name] = "operational"
                 else:
                     self.failures[name] += 1
+                    logging.warning(
+                        "%s (%s:%s) TCP check failed (%s/%s)",
+                        name, host, port, self.failures[name],
+                        int(self.config["failures_before_down"]),
+                    )
                     if self.failures[name] >= int(self.config["failures_before_down"]):
                         self.states[name] = "down"
 
