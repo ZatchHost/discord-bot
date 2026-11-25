@@ -1,0 +1,24 @@
+{
+  "channel_id": 0,
+  "message_id": 0,
+  "interval_seconds": 30,
+  "timeout_seconds": 3,
+  "failures_before_down": 3,
+  "nodes": [
+    {
+      "name": "Core Node",
+      "host": "192.0.2.10",
+      "port": 8006
+    },
+    {
+      "name": "Example",
+      "host": "192.0.2.11",
+      "port": 22
+    },
+    {
+      "name": "Website",
+      "host": "example.com",
+      "port": 443
+    }
+  ]
+}
